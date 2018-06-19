@@ -14,10 +14,7 @@ def package_root():
 
 def hooks_path(python_version, production):
     if production:
-        import cloudfn
-        path = os.path.join(os.path.dirname(cloudfn.__file__), 'hooks')
-        return path
-        # return '{}/lib/python{}/site-packages/cloudfn/hooks'.format(cache_dir(python_version), python_version)
+        return '{}/lib/python{}/site-packages/cloudfn/hooks'.format(cache_dir(python_version), python_version)
     return '{}hooks'.format(package_root())
 
 
