@@ -14,21 +14,20 @@ def package_root():
 
 def hooks_path(python_version, production):
     if production:
-        return cache_dir(python_version) + \
-            '/lib/python' + python_version + '/site-packages/cloudfn/hooks'
-    return package_root() + 'hooks'
+        return '{}/lib/python{}/site-packages/cloudfn/hooks'.format(cache_dir(python_version), python_version)
+    return '{}hooks'.format(package_root())
 
 
 def cache_dir(python_version):
-    return 'pip-cache-' + str(python_version)
+    return 'pip-cache-{}'.format((python_version))
 
 
 def image_name(python_version):
-    return 'pycloudfn-builder' + str(python_version)
+    return 'pycloudfn-builder{}'.format(python_version)
 
 
 def docker_path():
-    return package_root() + 'docker/'
+    return '{}docker/'.format(package_root())
 
 
 def output_name():
@@ -39,24 +38,25 @@ def get_django_settings():
     m = os.environ.get('DJANGO_SETTINGS_MODULE', '')
     if m == '':
         return m
-    return 'DJANGO_SETTINGS_MODULE='+m
+    return 'DJANGO_SETTINGS_MODULE={}'.format(m)
 
 
 def dockerfile(python_version):
-    return 'DockerfilePython' + python_version.replace('.', '-')
+    return 'DockerfilePython{}'.format(python_version.replace('.', '-'))
 
 
 def pip_prefix(python_version):
-    return 'python' + python_version + ' -m '
+    return 'python{} -m '.format(python_version)
 
 
 def build_in_docker(file_name, python_version, production_image):
     cwd = os.getcwd()
     cmds = []
     if not production_image:
-        cmds = cmds + [
-        'docker', 'build', '-f', docker_path() + dockerfile(python_version),
-        '-t', image_name(python_version), docker_path(), '&&']
+        cmds.extend([
+            'docker', 'build', '-f', docker_path() + dockerfile(python_version),
+            '-t', image_name(python_version), docker_path(), '&&'
+        ])
 
     cmds = cmds + ['docker', 'run', '--rm', '-ti', '-v', cwd + ':/app']
 
@@ -65,25 +65,34 @@ def build_in_docker(file_name, python_version, production_image):
     else:
         cmds.append(image_name(python_version))
 
+    inner_cmd = ' '.join([
+        'cd /app && \\\n',
+        'test -d cloudfn || mkdir cloudfn && cd cloudfn && \\\n',
+        'test -d {cache_dir} || virtualenv  -p python{python_version} {cache_dir} && \\\n',
+        '. {cache_dir}/bin/activate && \\\n',
+        'test -f ../requirements.txt && \\\n',
+        '{pip_prefix}pip install -r ../requirements.txt || echo no requirements.txt present && \\\n',
+        '{django_settings}',
+        ' '.join(build(file_name, python_version, True)),
+    ]).format(
+        cache_dir=cache_dir(python_version),
+        python_version=python_version,
+        pip_prefix=pip_prefix(python_version),
+        django_settings=get_django_settings()
+    )
     cmds = cmds + [
-        '/bin/sh', '-c',
-        '\'cd /app && test -d cloudfn || mkdir cloudfn && cd cloudfn '
-        '&& test -d ' + cache_dir(python_version) + ' || virtualenv ' +
-        ' -p python' + python_version + ' ' +
-        cache_dir(python_version) + ' ' +
-        '&& . ' + cache_dir(python_version) + '/bin/activate && ' +
-        'test -f ../requirements.txt && ' + pip_prefix(python_version) +
-        'pip install -r ../requirements.txt ' +
-        '|| echo no requirements.txt present && ' +
-        get_django_settings() + ' ' +
-        ' '.join(build(file_name, python_version, True)) + '\'',
+        '/bin/bash',
+        '-c',
+        '\'{}\''.format(inner_cmd),
     ]
     return cmds
 
 
 def build(file_name, python_version, production):
+    cachedir = cache_dir(python_version)
     base = [
-        'pyinstaller', '../' + file_name, '-y', '-n', output_name(),
+        'pyinstaller'.format(cachedir),
+        '../{}'.format(file_name), '-y', '-n', output_name(),
         '--clean', '--onedir',
         '--paths', '../',
         '--additional-hooks-dir', hooks_path(python_version, production),
@@ -116,41 +125,34 @@ def build_cmd(file_name, python_version, production, production_image):
     return build(file_name, python_version, production)
 
 
-def build_function(
-    function_name,
-    file_name,
-    trigger_type,
-    python_version,
-    production,
-    production_image,
-    verbose):
+def build_function(function_name, file_name, trigger_type, python_version, production, production_image, verbose):
 
     start = time.time()
 
-    print('''
-  _____                  _                 _         __
- |  __ \                | |               | |       / _|
- | |__) |   _ ______ ___| | ___  _   _  __| |______| |_ _ __
- |  ___/ | | |______/ __| |/ _ \| | | |/ _` |______|  _| '_ \\
- | |   | |_| |     | (__| | (_) | |_| | (_| |      | | | | | |
- |_|    \__, |      \___|_|\___/ \__,_|\__,_|      |_| |_| |_|
-         __/ |
-        |___/
-''')
-    print('''Function: {function_name}
-File: {file_name}
-Trigger: {trigger_type}
-Python version: {python_version}
-Production: {production}
-Production Image: {production_image}
-    '''.format(
+    message = '\n'.join(['',
+        r"                        _                 _         __       ",
+        r"                       | |               | |       / _|      ",
+        r" _ __  _   _ ______ ___| | ___  _   _  __| |______| |_ _ __  ",
+        r"| '_ \| | | |______/ __| |/ _ \| | | |/ _` |______|  _| '_ \ ",
+        r"| |_) | |_| |     | (__| | (_) | |_| | (_| |      | | | | | |",
+        r"| .__/ \__, |      \___|_|\___/ \__,_|\__,_|      |_| |_| |_|",
+        r"| |     __/ |                                                ",
+        r"|_|    |___/                                                 ",
+        '',
+        'Function: {function_name}',
+        'File: {file_name}',
+        'Trigger: {trigger_type}',
+        'Python version: {python_version}',
+        'Production: {production}',
+        'Production Image: {production_image}',
+    ])
+    print(message.format(
         function_name=function_name,
         file_name=file_name,
         trigger_type=trigger_type,
         python_version=python_version,
         production=production,
-        production_image=production_image,
-        )
+        production_image=production_image)
     )
 
     stdout = subprocess.PIPE
@@ -158,6 +160,9 @@ Production Image: {production_image}
     if verbose:
         stdout = sys.stdout
         stderr = sys.stderr
+        print('')
+        print('Running build command:')
+        print(' '.join(build_cmd(file_name, python_version, production, production_image)))
 
     (p, output) = run_build_cmd(
         ' '.join(build_cmd(file_name, python_version, production, production_image)),
@@ -166,17 +171,22 @@ Production Image: {production_image}
     if p.returncode == 0:
         build_javascript(function_name, trigger_type)
     else:
-        print('\nBuild failed!'
-              'See the build output below for what might have went wrong:')
-        print(output[0])
+        print('\n'.join([
+            '',
+            'Build failed!',
+        ]))
+        if output:
+            print('See the build output below for what might have went wrong:')
+            print(output[0])
         sys.exit(p.returncode)
     (c, co) = cleanup()
     if c.returncode == 0:
         end = time.time()
-        print('''
-Elapsed time: {elapsed}s
-Output: ./cloudfn/target/index.js
-'''.format(elapsed=round((end - start), 1)))
+        message = '\n'.join([
+            '',
+            'Elapsed time: {elapsed}s',
+            'Output: ./cloudfn/target/index.js'])
+        print(message.format(elapsed=round((end - start), 1)))
     else:
         print('\nSomething went wrong when cleaning up: ' + co[0])
         sys.exit(c.returncode)
@@ -198,24 +208,25 @@ def build_javascript(function_name, trigger_type):
     js = open(package_root() + 'template/index.js').read()
     t = Template(js)
     rendered_js = t.render(config={
-            'output_name': output_name(),
-            'function_name': function_name,
-            'trigger_http': trigger_type == 'http',
-        }
-    )
+        'output_name': output_name(),
+        'function_name': function_name,
+        'trigger_http': trigger_type == 'http',
+    })
     open('cloudfn/index.js', 'w').write(rendered_js)
-    open('cloudfn/package.json', 'w').write('''{
-  "name": "target",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "google-auto-auth": "^0.7.0"
-  }
-}
-        ''')
+    output = '\n'.join([
+        '{',
+        '  "name": "target",',
+        '  "version": "1.0.0",',
+        '  "description": "",',
+        '  "main": "index.js",',
+        '  "author": "",',
+        '  "license": "ISC",',
+        '  "dependencies": {',
+        '    "google-auto-auth": "^0.7.0"',
+        '  }',
+        '}',
+    ])
+    open('cloudfn/package.json', 'w').write(output)
 
 
 @make_spin(Default, 'Cleaning up...')
@@ -233,7 +244,7 @@ def cleanup():
 def main():
     parser = argparse.ArgumentParser(
         description='Build a GCP Cloud Function in python.'
-        )
+    )
     parser.add_argument('function_name', type=str,
                         help='the name of your cloud function')
     parser.add_argument('trigger_type', type=str,
