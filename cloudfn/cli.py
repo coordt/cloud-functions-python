@@ -13,8 +13,8 @@ def package_root():
 
 
 def hooks_path(python_version, production):
-    if production:
-        return '{}/lib/python{}/site-packages/cloudfn/hooks'.format(cache_dir(python_version), python_version)
+    # if production:
+    #     return '{}/lib/python{}/site-packages/cloudfn/hooks'.format(cache_dir(python_version), python_version)
     return '{}hooks'.format(package_root())
 
 
