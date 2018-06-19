@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 setup(
     name='pycloudfn',
@@ -29,6 +29,6 @@ setup(
         'google-auth',
     ],
     include_package_data=True,
-    packages=['cloudfn'],
+    packages=find_packages(exclude=['examples*', 'docs', 'build', ]),
     zip_safe=False
 )
